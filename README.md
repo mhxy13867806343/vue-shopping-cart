@@ -42,7 +42,12 @@
 ## 项目预览
 
 你可以通过以下链接预览项目：
-[Vue购物车项目预览](https://mhxy13867806343.github.io/vue-shopping-cart/)
+
+- **项目主页：** [https://mhxy13867806343.github.io/vue-shopping-cart/main.html](https://mhxy13867806343.github.io/vue-shopping-cart/main.html)
+- **订单详情页：** [https://mhxy13867806343.github.io/vue-shopping-cart/order-detail.html](https://mhxy13867806343.github.io/vue-shopping-cart/order-detail.html)
+- **支付页面：** [https://mhxy13867806343.github.io/vue-shopping-cart/pay.html](https://mhxy13867806343.github.io/vue-shopping-cart/pay.html)
+
+项目代码仓库：[https://github.com/mhxy13867806343/vue-shopping-cart](https://github.com/mhxy13867806343/vue-shopping-cart)
 
 ## 本地运行
 
