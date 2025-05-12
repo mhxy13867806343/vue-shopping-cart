@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+  <title>购物车示例</title>
+  <!-- 引入Vant样式 -->
+  <link rel="stylesheet" href="pub/vant.min.css"/>
+  <!-- 引入Vue和Vant -->
+  <script src="pub/vue.global.js"></script>
+  <script src="pub/vant.min.js"></script>
+  <link rel="stylesheet" href="static/main.css"/>
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- 未完成订单提示 -->
+    <div class="unfinished-order" v-if="unfinishedOrder">
+      <div class="unfinished-order-content">
+        <div class="unfinished-order-info">
+          <div class="unfinished-order-title">您有未支付的订单</div>
+          <div class="unfinished-order-time">还剩 {{ countdownMinutes }}:{{ countdownSeconds < 10 ? '0' + countdownSeconds : countdownSeconds }} 自动取消</div>
+        </div>
+        <van-button type="primary" size="small" @click="goToPayment">去支付</van-button>
+      </div>
+    </div>
+    
+    <!-- 头部 -->
+    <header class="header">
+      <div class="back-button">
+        <van-icon name="arrow-left" />
+      </div>
+      <div class="header-tabs">
+        <div class="tab active">外送</div>
+        <div class="tab">自取</div>
+      </div>
+      <div class="header-actions">
+        <van-icon name="search" />
+        <van-icon name="fire-o" />
+        <van-icon :name="isLink?'like':'like-o'" @click="isLink=!isLink"/>
+        <van-icon name="more-o" />
+        <van-icon name="service-o" />
+      </div>
+    </header>
+    
+    <!-- 导航标签 -->
+    <div class="nav-tabs">
+      <div class="tab active">点餐</div>
+      <div class="tab">评价<span class="tab-count">213</span></div>
+      <div class="tab">品牌<span class="tab-tag">食品安全</span></div>
+    </div>
+    
+    <!-- 主体内容 -->
+    <div class="main-content">
+      <!-- 分类侧边栏 -->
+      <div class="category-sidebar">
+        <div v-for="(category, index) in categories" 
+          :key="index"
+          :class="['category-item', { active: activeCategory === index }]"
+          @click="activeCategory = index">
+          <span class="category-name">{{ category.name }}</span>
+          <span v-if="category.badge" class="category-badge">{{ category.badge }}</span>
+        </div>
+      </div>
+      
+      <!-- 商品列表 -->
+      <div class="product-content">
+        <div v-if="filteredProducts.length === 0" class="empty-product-tip">
+          <van-icon name="info-o" size="48" />
+          <p>暂无商品，请选择其他分类</p>
+        </div>
+        <div  @click="showSkuSelector(product)" v-else v-for="(product, index) in filteredProducts" :key="index" class="product-item">
+          <div class="product-tag" v-if="product.isNew">新品</div>
+          <img :src="product.image" class="product-image" />
+          <div class="product-info" > 
+            <div class="product-name">{{ product.name }}</div>
+            <div class="product-desc">{{ product.description }}</div>
+            <div class="product-sales">月售 {{ product.monthlySales }}</div>
+            <div class="product-price-row">
+              <div class="product-price">
+                <span class="price-symbol">¥</span>
+                <span class="price-value">{{ product.price }}</span>
+                <span class="price-unit">起</span>
+                <span class="original-price" v-if="product.originalPrice">¥{{ product.originalPrice }}</span>
+              </div>
+              <button class="add-to-cart">
+                <span class="select-spec">选规格</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 购物车图标 -->
+    <div class="cart-icon" @click="showCart" v-if="cartItems.length > 0">
+      <van-icon name="shopping-cart-o" size="24" />
+      <span class="cart-count">{{ totalCartItems }}</span>
+    </div>
+    
+    <!-- 底部购物车栏 -->
+    <div class="cart-bar">
+      <div class="cart-info" @click="showCart">
+        <div class="cart-icon-wrapper">
+          <van-icon name="shopping-cart-o" size="24" />
+          <span class="cart-count" v-if="cartItems.length > 0">{{ totalCartItems }}</span>
+        </div>
+        <div class="cart-price" v-if="cartItems.length > 0">
+          <span>¥{{ totalPrice.toFixed(2) }}</span>
+        </div>
+        <div class="cart-empty" v-else>
+          购物车是空的
+        </div>
+      </div>
+      <div class="delivery-fee" :class="{ 'delivery-fee-warning': deliveryThreshold - totalPrice > 0 }">
+        <template v-if="deliveryThreshold - totalPrice > 0">
+          还差¥{{ (deliveryThreshold - totalPrice).toFixed(2) }}起送
+        </template>
+        <template v-else>
+         <span @click="checkout">去结算</span> 
+        </template>
+      </div>
+    </div>
+    
+    <!-- 商品规格选择弹窗 -->
+    <van-popup 
+      v-model:show="skuPopupVisible" 
+      position="bottom" 
+      round 
+      :style="{ maxHeight: '80%' }"
+      class="sku-popup"
+    >
+      <div class="sku-selector">
+        <div class="sku-header">
+          <van-image :src="currentProduct?.image" class="sku-image" />
+          <div class="sku-info">
+            <div class="sku-name">{{ currentProduct?.name }}</div>
+            <div class="sku-price">
+              <span class="price-symbol">¥</span>
+              <span class="price-value">{{ currentSku?.price || currentProduct?.price }}</span>
+            </div>
+            <div class="sku-selected">已选：{{ currentSku?.name || '请选择规格' }}</div>
+          </div>
+          <div class="close-icon" @click="skuPopupVisible = false" style="cursor: pointer;">
+            <van-icon name="cross" />
+          </div>
+        </div>
+        
+        <div class="sku-options">
+          <div class="option-group" v-for="(group, groupIndex) in skuGroups" :key="groupIndex">
+            <div class="option-title">{{ group.title }}</div>
+            <div class="option-items">
+              <div 
+                v-for="(option, optionIndex) in group.options" 
+                :key="optionIndex"
+                :class="['option-item', { active: selectedOptions[group.id] === option.id }]"
+                @click="selectOption(group.id, option.id)"
+              >
+                {{ option.name }}
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="sku-quantity">
+          <span>数量</span>
+          <van-stepper v-model="quantity" min="1" />
+        </div>
+        
+        <div class="sku-actions">
+          <van-button type="primary" block round @click="addToCart">加入购物车</van-button>
+        </div>
+      </div>
+    </van-popup>
+    
+    <!-- 购物车弹窗 -->
+    <van-popup 
+      v-model:show="cartPopupVisible" 
+      position="bottom" 
+      round 
+      :style="{ maxHeight: '80%' }"
+      class="cart-popup"
+    >
+      <div class="cart-popup-content">
+        <div class="cart-header">
+          <div class="cart-title">已选商品</div>
+          <div class="cart-clear" @click="confirmClearCart">
+            <van-icon name="delete" />
+            <span>清空</span>
+          </div>
+        </div>
+        
+        <div class="cart-items">
+          <div v-for="(item, index) in cartItems" :key="index" class="cart-item">
+            <div class="item-info">
+              <div class="item-name">{{ item.product.name }}</div>
+              <div class="item-sku" v-if="item.sku">{{ item.sku.name }}</div>
+            </div>
+            <div class="item-price">¥{{ ((item.sku ? item.sku.price : item.product.price) * item.quantity).toFixed(2) }}</div>
+            <div class="item-quantity">
+              <van-stepper v-model="item.quantity" min="1" @change="updateCart" />
+            </div>
+          </div>
+        </div>
+        
+        <div class="cart-footer">
+          <van-button type="primary" block round @click="checkout" :disabled="deliveryThreshold - totalPrice > 0">
+            <template v-if="deliveryThreshold - totalPrice > 0">
+              还差¥{{ (deliveryThreshold - totalPrice).toFixed(2) }}起送
+            </template>
+            <template v-else>
+              去结算
+            </template>
+          </van-button>
+        </div>
+      </div>
+    </van-popup>
+    
+    <!-- 清空购物车确认弹窗 -->
+    <van-dialog
+      v-model:show="clearCartDialogVisible"
+      title="清空购物车"
+      show-cancel-button
+      @confirm="clearCart"
+    >
+      <div class="clear-cart-content">
+        是否清空购物车？
+      </div>
+    </van-dialog>
+  </div>
+  
+  <script>
+    // 使用Vue创建应用
+    const { createApp, ref, reactive, computed, onMounted, watch,onUnmounted } = Vue;
+    
+    // 使用Vant组件
+    const { showToast, showDialog } = vant;
+    
+    const app = createApp({
+      setup() {
+        const isLink=ref(false)
+        // 未完成订单相关
+        const unfinishedOrder = ref(null);
+        const countdownMinutes = ref(15);
+        const countdownSeconds = ref(0);
+        let countdownTimer = null;
+        
+        // 检查是否有未完成的订单
+        const checkUnfinishedOrder = () => {
+          try {
+            const orderData = JSON.parse(localStorage.getItem('orderData'));
+            if (orderData) {
+              // 检查订单时间是否超过15分钟
+              const orderTime = new Date(orderData.orderTime).getTime();
+              const currentTime = new Date().getTime();
+              const timeDiff = currentTime - orderTime;
+              
+              // 如果订单时间小于15分钟，显示未完成订单
+              if (timeDiff < 15 * 60 * 1000) {
+                unfinishedOrder.value = orderData;
+                
+                // 计算剩余时间
+                const remainingTime = 15 * 60 * 1000 - timeDiff;
+                countdownMinutes.value = Math.floor(remainingTime / (60 * 1000));
+                countdownSeconds.value = Math.floor((remainingTime % (60 * 1000)) / 1000);
+                
+                // 启动倒计时
+                startCountdown();
+              } else {
+                // 超过15分钟，清除订单数据
+                localStorage.removeItem('orderData');
+              }
+            }
+          } catch (error) {
+            console.error('检查未完成订单失败:', error);
+          }
+        };
+        
+        // 启动倒计时
+        const startCountdown = () => {
+          // 清除之前的定时器
+          if (countdownTimer) {
+            clearInterval(countdownTimer);
+          }
+          
+          // 每秒更新倒计时
+          countdownTimer = setInterval(() => {
+            if (countdownSeconds.value > 0) {
+              countdownSeconds.value--;
+            } else {
+              if (countdownMinutes.value > 0) {
+                countdownMinutes.value--;
+                countdownSeconds.value = 59;
+              } else {
+                // 倒计时结束，清除订单数据
+                clearInterval(countdownTimer);
+                localStorage.removeItem('orderData');
+                unfinishedOrder.value = null;
+              }
+            }
+          }, 1000);
+        };
+        
+        // 跳转到支付页面
+        const goToPayment = () => {
+          window.location.href = 'order-detail.html';
+        };
+        
+        // 页面加载完成后执行的钩子
+        onMounted(() => {
+          // 初始化时更新分类高亮
+          setTimeout(() => {
+            updateCategoryHighlight();
+            updateCategoryBadges();
+          }, 100);
+          
+          // 检查是否有未完成的订单
+          checkUnfinishedOrder();
+        });
+        
+        // 页面卸载时清除定时器
+        onUnmounted(() => {
+          if (countdownTimer) {
+            clearInterval(countdownTimer);
+          }
+        });
+        // 分类数据
+        const categories = ref([
+          { name: '精选推荐', badge: 0 },
+          { name: '原叶·鲜奶茶', badge: 0 },
+          { name: '现榨·果蔬', badge: 0 },
+          { name: '季节·限定', badge: 0 },
+          { name: '果茶·真果肉', badge: 0 },
+          { name: '咖啡·现磨', badge: 0 },
+          { name: '奶茶·料多多', badge: 0 },
+          { name: '解渴·超值', badge: 0 },
+          { name: '烤制·小轻食', badge: 0 },
+          { name: '美味加料', badge: 0 },
+          { name: '老星套餐', badge: 0 }
+        ]);
+        
+        const activeCategory = ref(0);
+        
+        // 商品数据
+        const products = ref([
+          {
+            id: 1,
+            name: '话梅柿檬水',
+            description: '高维C 青梅 柿檬汁',
+            price: 11,
+            monthlySales: 13,
+            image: 'img/cat.jpg',
+            isNew: true,
+            categoryId: 0
+          },
+          {
+            id: 2,
+            name: '招牌柿檬茶',
+            description: '四季春 香水柿檬 高维C',
+            price: 15,
+            monthlySales: 2,
+            image: 'img/cat.jpg',
+            isNew: true,
+            categoryId: 0
+          },
+          {
+            id: 3,
+            name: '芝士杨梅',
+            description: '手工去核 多肉奶盖 杨梅汁',
+            price: 22,
+            monthlySales: 3,
+            image: 'img/cat.jpg',
+            isNew: true,
+            categoryId: 0
+          },
+          {
+            id: 4,
+            name: '冰咖小黄柿',
+            description: '香气浓郁 酸甜爽口 高维C',
+            price: 15.9,
+            originalPrice: 17,
+            monthlySales: 41,
+            image: 'img/cat.jpg',
+            categoryId: 5
+          },
+          {
+            id: 5,
+            name: '功夫拿铁',
+            description: '牛乳 丝滑 醋厚奶香',
+            price: 17,
+            originalPrice: 19,
+            monthlySales: 2,
+            image: 'img/cat.jpg',
+            categoryId: 5
+          },
+          {
+            id: 6,
+            name: '焦糖丝绒拿铁',
+            description: '焦糖甜香 现磨咖啡 芝士奶盖',
+            price: 18,
+            originalPrice: 20,
+            monthlySales: 3,
+            image: 'img/cat.jpg',
+            categoryId: 5
+          },
+          {
+            id: 7,
+            name: '珍珠奶茶',
+            description: '经典口味 香浓奶茶',
+            price: 13,
+            originalPrice: 15,
+            monthlySales: 22,
+            image: 'img/cat.jpg',
+            categoryId: 6
+          }
+        ]);
+        
+        // 根据当前选中的分类过滤商品
+        const filteredProducts = computed(() => {
+          return products.value.filter(product => product.categoryId === activeCategory.value);
+        });
+        
+        // 商品规格选择相关
+        const skuPopupVisible = ref(false);
+        const currentProduct = ref(null);
+        const selectedOptions = reactive({});
+        const quantity = ref(1);
+        
+        // 商品规格组
+        const skuGroups = ref([
+          {
+            id: 'size',
+            title: '规格',
+            options: [
+              { id: 'large', name: '大', price: 13 },
+              { id: 'medium', name: '中', price: 12 }
+            ]
+          },
+          {
+            id: 'sugar',
+            title: '去料',
+            options: [
+              { id: 'with_pearl', name: '不去料' },
+              { id: 'no_pearl', name: '去珍珠' }
+            ]
+          },
+          {
+            id: 'topping',
+            title: '换料',
+            options: [
+              { id: 'original', name: '不换料' },
+              { id: 'coconut', name: '珍珠换椰果' }
+            ]
+          },
+          {
+            id: 'temperature',
+            title: '温度',
+            options: [
+              { id: 'normal_ice', name: '正常冰' },
+              { id: 'less_ice', name: '少冰' },
+              { id: 'no_ice', name: '去冰' },
+              { id: 'warm', name: '温' },
+              { id: 'hot', name: '热' }
+            ]
+          }
+        ]);
+        
+        // 当前选中的SKU
+        const currentSku = computed(() => {
+          // 简化版，实际应该根据selectedOptions组合计算出具体SKU
+          if (selectedOptions.size) {
+            const sizeOption = skuGroups.value[0].options.find(option => option.id === selectedOptions.size);
+            return {
+              id: selectedOptions.size,
+              name: sizeOption.name,
+              price: sizeOption.price
+            };
+          }
+          return null;
+        });
+        
+        // 显示商品规格选择器
+        const showSkuSelector = (product) => {
+          currentProduct.value = product;
+          // 重置选项和数量，并默认选中每个组的第一个选项
+          Object.keys(selectedOptions).forEach(key => delete selectedOptions[key]);
+          // 为每个选项组默认选择第一个选项
+          skuGroups.value.forEach(group => {
+            if (group.options && group.options.length > 0) {
+              selectedOptions[group.id] = group.options[0].id;
+            }
+          });
+          quantity.value = 1;
+          skuPopupVisible.value = true;
+        };
+        
+        // 选择规格选项
+        const selectOption = (groupId, optionId) => {
+          selectedOptions[groupId] = optionId;
+        };
+        
+        // 购物车相关
+        const cartItems = ref([]);
+        const cartPopupVisible = ref(false);
+        const clearCartDialogVisible = ref(false);
+        const deliveryThreshold = ref(50); // 起送金额
+        
+        // 计算购物车总数量
+        const totalCartItems = computed(() => {
+          return cartItems.value.reduce((total, item) => total + item.quantity, 0);
+        });
+        
+        // 计算每个分类的商品数量
+        const updateCategoryBadges = () => {
+          // 重置所有分类的badge
+          categories.value.forEach(category => {
+            category.badge = 0;
+          });
+          
+          // 计算每个分类中的商品数量
+          cartItems.value.forEach(item => {
+            const categoryId = item.product.categoryId;
+            if (categoryId >= 0 && categoryId < categories.value.length) {
+              categories.value[categoryId].badge += item.quantity;
+            }
+          });
+          
+          // 强制Vue更新视图
+          categories.value = [...categories.value];
+        };
+        
+        // 计算购物车总价
+        const totalPrice = computed(() => {
+          return cartItems.value.reduce((total, item) => {
+            const price = item.sku ? item.sku.price : item.product.price;
+            return total + price * item.quantity;
+          }, 0);
+        });
+        
+        // 添加到购物车
+        const addToCart = () => {
+          // 检查是否选择了必要的规格
+          if (!currentSku.value) {
+            showToast('请选择规格');
+            return;
+          }
+          
+          // 查找购物车中是否已存在相同商品和规格
+          const existingItemIndex = cartItems.value.findIndex(item => 
+            item.product.id === currentProduct.value.id && 
+            item.sku?.id === currentSku.value.id
+          );
+          
+          if (existingItemIndex > -1) {
+            // 如果已存在，增加数量
+            cartItems.value[existingItemIndex].quantity += quantity.value;
+          } else {
+            // 如果不存在，添加新项
+            cartItems.value.push({
+              product: currentProduct.value,
+              sku: currentSku.value,
+              quantity: quantity.value
+            });
+          }
+          
+          // 关闭规格选择弹窗
+          skuPopupVisible.value = false;
+          
+          // 显示添加成功提示
+          showToast({
+            message: '已加入购物车',
+            position: 'bottom'
+          });
+          
+          // 添加动画效果
+          createAddToCartAnimation();
+          
+          // 更新左侧分类高亮状态
+          updateCategoryHighlight();
+          updateCategoryBadges();
+        };
+        
+        // 更新左侧分类高亮状态
+        const updateCategoryHighlight = () => {
+          // 如果购物车为空，不需要更新
+          if (cartItems.value.length === 0) return;
+          
+          // 创建一个集合存储购物车中所有商品的分类 ID
+          const categoryIds = new Set();
+          cartItems.value.forEach(item => {
+            categoryIds.add(item.product.categoryId);
+          });
+          
+          // 如果当前选中的分类不在购物车中的商品分类中，则切换到第一个包含购物车商品的分类
+          if (!categoryIds.has(activeCategory.value)) {
+            // 找到第一个包含购物车商品的分类
+            for (let i = 0; i < categories.value.length; i++) {
+              if (categoryIds.has(i)) {
+                activeCategory.value = i;
+                break;
+              }
+            }
+          }
+        };
+        
+        // 创建添加到购物车的动画
+        const createAddToCartAnimation = () => {
+          // 创建动画元素
+          const animationEl = document.createElement('div');
+          animationEl.className = 'add-to-cart-animation';
+          document.body.appendChild(animationEl);
+          
+          // 获取起始位置和目标位置
+          const startRect = document.querySelector('.add-to-cart').getBoundingClientRect();
+          const endRect = document.querySelector('.cart-icon-wrapper').getBoundingClientRect();
+          
+          // 设置起始位置
+          animationEl.style.left = startRect.left + 'px';
+          animationEl.style.top = startRect.top + 'px';
+          
+          // 开始动画
+          setTimeout(() => {
+            animationEl.style.left = endRect.left + 'px';
+            animationEl.style.top = endRect.top + 'px';
+            animationEl.style.opacity = '0';
+            animationEl.style.transform = 'scale(0.2)';
+            
+            // 动画结束后移除元素
+            setTimeout(() => {
+              document.body.removeChild(animationEl);
+            }, 500);
+          }, 10);
+        };
+        
+        // 显示购物车
+        const showCart = () => {
+          if (cartItems.value.length === 0) {
+            showToast('购物车是空的');
+            return;
+          }
+          cartPopupVisible.value = true;
+        };
+        
+        // 更新购物车
+        const updateCart = () => {
+          // 移除数量为0的商品
+          cartItems.value = cartItems.value.filter(item => item.quantity > 0);
+          // 更新左侧分类高亮
+          updateCategoryHighlight();
+          // 更新分类商品数量
+          updateCategoryBadges();
+        };
+        
+        // 确认清空购物车
+        const confirmClearCart = () => {
+          clearCartDialogVisible.value = true;
+        };
+        
+        // 清空购物车
+        const clearCart = () => {
+          cartItems.value = [];
+          cartPopupVisible.value = false;
+          // 清空购物车后，默认选中第一个分类
+          activeCategory.value = 0;
+          // 重置所有分类的商品数量
+          updateCategoryBadges();
+        };
+        
+        // 结算
+        const checkout = () => {
+          // 检查购物车总价是否达到起送价
+          if (totalPrice.value < deliveryThreshold.value) {
+            showToast({
+              message: `订单金额不足，还差¥${(deliveryThreshold.value - totalPrice.value).toFixed(2)}起送`,
+              position: 'bottom'
+            });
+            return;
+          }
+          
+          // 保存订单数据到本地存储
+          const orderData = {
+            items: cartItems.value,
+            totalPrice: totalPrice.value,
+            orderTime: new Date().toLocaleString()
+          };
+          
+          try {
+            localStorage.setItem('orderData', JSON.stringify(orderData));
+            // 跳转到订单详情页面
+            window.location.href = 'order-detail.html';
+          } catch (error) {
+            console.error('保存订单数据失败:', error);
+            showToast('跳转订单详情失败');
+          }
+        };
+        
+        return {
+            isLink,
+          categories,
+          activeCategory,
+          filteredProducts,
+          skuPopupVisible,
+          currentProduct,
+          selectedOptions,
+          quantity,
+          skuGroups,
+          currentSku,
+          showSkuSelector,
+          selectOption,
+          cartItems,
+          cartPopupVisible,
+          clearCartDialogVisible,
+          deliveryThreshold,
+          totalCartItems,
+          totalPrice,
+          addToCart,
+          showCart,
+          updateCart,
+          confirmClearCart,
+          clearCart,
+          checkout,
+          // 未完成订单相关
+          unfinishedOrder,
+          countdownMinutes,
+          countdownSeconds,
+          goToPayment
+        };
+      }
+    });
+    
+    // 注册Vant组件
+    app.use(vant);
+    
+    // 挂载应用
+    app.mount('#app');
+  </script>
+</body>
+</html>

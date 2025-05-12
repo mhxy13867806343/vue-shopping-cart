@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+  <title>订单详情</title>
+  <!-- 引入Vant样式 -->
+  <link rel="stylesheet" href="pub/vant.min.css"/>
+  <!-- 引入Vue和Vant -->
+  <script src="pub/vue.global.js"></script>
+  <script src="pub/vant.min.js"></script>
+  <link rel="stylesheet" href="static/order-detail.css"/>
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- 头部 -->
+    <header class="header">
+      <div class="back-button" @click="goBack">
+        <van-icon name="arrow-left" />
+      </div>
+      <div class="header-title">订单详情</div>
+    </header>
+    
+    <!-- 主体内容 -->
+    <div class="main-content">
+      <!-- 订单信息 -->
+      <div class="order-card">
+        <div class="order-title">
+          <span>订单信息</span>
+          <span class="order-status">待支付 (还剩 {{ countdownMinutes }}:{{ countdownSeconds < 10 ? '0' + countdownSeconds : countdownSeconds }})</span>
+        </div>
+        <div class="order-items">
+          <div v-for="(item, index) in orderItems" :key="index" class="order-item">
+            <div class="item-info">
+              <div class="item-name">{{ item.product.name }}</div>
+              <div class="item-sku" v-if="item.sku">{{ item.sku.name }}</div>
+            </div>
+            <div class="item-price">¥{{ ((item.sku ? item.sku.price : item.product.price) * item.quantity).toFixed(2) }}</div>
+            <div class="item-quantity">x{{ item.quantity }}</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 订单金额 -->
+      <div class="order-summary">
+        <div class="summary-item">
+          <span>商品金额</span>
+          <span>¥{{ totalPrice.toFixed(2) }}</span>
+        </div>
+        <div class="summary-item">
+          <span>配送费</span>
+          <span>¥0.00</span>
+        </div>
+        <div class="summary-item">
+          <span>实付金额</span>
+          <span>¥{{ totalPrice.toFixed(2) }}</span>
+        </div>
+      </div>
+      
+      <!-- 配送信息 -->
+      <div class="delivery-info">
+        <div class="info-title">配送信息</div>
+        <div class="info-item">
+          <div class="info-label">配送方式</div>
+          <div class="info-value">外卖配送</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">送达时间</div>
+          <div class="info-value">尽快送达（预计30分钟）</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">收货地址</div>
+          <div class="info-value">{{ deliveryAddress || '请添加收货地址' }}</div>
+        </div>
+      </div>
+      
+      <div class="order-time">
+        下单时间：{{ orderTime }}<br>
+        订单将在30分钟内未支付自动取消
+      </div>
+    </div>
+    
+    <!-- 底部操作栏 -->
+    <div class="action-bar">
+      <van-button type="default" class="action-button" @click="goBack">返回购物车</van-button>
+      <van-button type="primary" class="action-button" @click="payOrder">去支付</van-button>
+    </div>
+  </div>
+  
+  <script>
+    // 使用Vue创建应用
+    const { createApp, ref, computed, onMounted,onUnmounted } = Vue;
+    
+    // 使用Vant组件
+    const { showToast, showDialog } = vant;
+    
+    const app = createApp({
+      setup() {
+        // 获取本地存储的订单数据
+        const orderItems = ref([]);
+        const totalPrice = ref(0);
+        const deliveryAddress = ref('');
+        const orderTime = ref('');
+        const countdownMinutes = ref(15);
+        const countdownSeconds = ref(0);
+        let countdownTimer = null;
+        
+        // 启动倒计时
+        const startCountdown = () => {
+          // 清除之前的定时器
+          if (countdownTimer) {
+            clearInterval(countdownTimer);
+          }
+          
+          // 每秒更新倒计时
+          countdownTimer = setInterval(() => {
+            if (countdownSeconds.value > 0) {
+              countdownSeconds.value--;
+            } else {
+              if (countdownMinutes.value > 0) {
+                countdownMinutes.value--;
+                countdownSeconds.value = 59;
+              } else {
+                // 倒计时结束，清除订单数据
+                clearInterval(countdownTimer);
+                localStorage.removeItem('orderData');
+                window.location.href = 'main.html';
+              }
+            }
+          }, 1000);
+        };
+        
+        onMounted(() => {
+          // 从本地存储获取订单数据
+          try {
+            const orderData = JSON.parse(localStorage.getItem('orderData'));
+            if (orderData) {
+              orderItems.value = orderData.items || [];
+              totalPrice.value = orderData.totalPrice || 0;
+              orderTime.value = orderData.orderTime || new Date().toLocaleString();
+              
+              // 计算倒计时
+              const orderTimeMs = new Date(orderData.orderTime).getTime();
+              const currentTimeMs = new Date().getTime();
+              const timeDiff = currentTimeMs - orderTimeMs;
+              
+              if (timeDiff < 15 * 60 * 1000) {
+                const remainingTime = 15 * 60 * 1000 - timeDiff;
+                countdownMinutes.value = Math.floor(remainingTime / (60 * 1000));
+                countdownSeconds.value = Math.floor((remainingTime % (60 * 1000)) / 1000);
+                
+                // 启动倒计时
+                startCountdown();
+              } else {
+                // 超过15分钟，清除订单数据
+                localStorage.removeItem('orderData');
+                window.location.href = 'main.html';
+              }
+            }
+          } catch (error) {
+            console.error('获取订单数据失败:', error);
+            showToast('获取订单数据失败');
+          }
+        });
+        
+        // 页面卸载时清除定时器
+        onUnmounted(() => {
+          if (countdownTimer) {
+            clearInterval(countdownTimer);
+          }
+        });
+        
+        // 返回购物车
+        const goBack = () => {
+          window.location.href = 'main.html';
+        };
+        
+        // 支付订单
+        const payOrder = () => {
+          // 跳转到支付页面
+          window.location.href = 'pay.html';
+        };
+        
+        return {
+          orderItems,
+          totalPrice,
+          deliveryAddress,
+          orderTime,
+          countdownMinutes,
+          countdownSeconds,
+          goBack,
+          payOrder
+        };
+      }
+    });
+    
+    // 注册Vant组件
+    app.use(vant);
+    
+    // 挂载应用
+    app.mount('#app');
+  </script>
+</body>
+</html>

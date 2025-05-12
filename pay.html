@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+  <title>订单支付</title>
+  <!-- 引入Vant样式 -->
+  <link rel="stylesheet" href="pub/vant.min.css"/>
+  <!-- 引入Vue和Vant -->
+  <script src="pub/vue.global.js"></script>
+  <script src="pub/vant.min.js"></script>
+  <link rel="stylesheet" href="static/pay.css"/>
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- 头部 -->
+    <header class="header">
+      <div class="back-button" @click="goBack">
+        <van-icon name="arrow-left" />
+      </div>
+      <div class="header-title">订单支付</div>
+    </header>
+    
+    <!-- 主体内容 -->
+    <div class="main-content">
+      <!-- 支付金额 -->
+      <div class="pay-card">
+        <div class="pay-title">
+          <span>支付金额</span>
+        </div>
+        <div class="pay-amount">¥{{ totalPrice.toFixed(2) }}</div>
+      </div>
+      
+      <!-- 支付方式 -->
+      <div class="pay-card">
+        <div class="pay-title">
+          <span>支付方式</span>
+        </div>
+        <div class="pay-methods">
+          <div class="pay-method" @click="payMethod = 'alipay'">
+            <img src="img/alipay.png" alt="支付宝" class="method-icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 fill=%22%231677FF%22 /><path d=%22M5,13.5C6.5,16.5,9,19,13.5,20.5C11,17,9,13.5,8.5,11.5L13,8.5L11.5,7L7,10C7,7,7.5,4.5,8,3C5,4.5,3,7.5,3,11C3,12,3.5,13,4,13.5C4.5,13.5,4.5,13.5,5,13.5Z%22 fill=%22white%22 /></svg>'">
+            <div class="method-name">支付宝</div>
+            <van-radio name="alipay" v-model="payMethod"></van-radio>
+          </div>
+          <div class="pay-method" @click="payMethod = 'wechat'">
+            <img src="img/wechat.png" alt="微信支付" class="method-icon" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 fill=%22%2307C160%22 /><path d=%22M8,6C4.5,7.5,4.5,12,7,13.5C5.5,14.5,5.5,16.5,6.5,17.5C8.5,17.5,10,16,11.5,16C13.5,16,15,17.5,17,17.5C18.5,16.5,18.5,14.5,17,13.5C19.5,12,19.5,7.5,16,6C14,6,13,7.5,12,7.5C11,7.5,10,6,8,6Z%22 fill=%22white%22 /></svg>'">
+            <div class="method-name">微信支付</div>
+            <van-radio name="wechat" v-model="payMethod"></van-radio>
+          </div>
+        </div>
+        
+        <!-- 二维码 -->
+        <div class="qrcode-container">
+          <div class="qrcode" v-if="payMethod === 'alipay'">
+            <van-image width="200" height="200" src="img/二维码.png" alt="支付宝二维码" fit="contain" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22 viewBox=%220 0 200 200%22><rect width=%22200%22 height=%22200%22 fill=%22%23f5f5f5%22 /><text x=%2250%22 y=%22100%22 font-family=%22Arial%22 font-size=%2214%22 fill=%22%23999%22>支付宝二维码</text></svg>'"></van-image>
+          </div>
+          <div class="qrcode" v-if="payMethod === 'wechat'">
+            <van-image width="200" height="200" src="img/二维码.png" alt="微信支付二维码" fit="contain" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22 viewBox=%220 0 200 200%22><rect width=%22200%22 height=%22200%22 fill=%22%23f5f5f5%22 /><text x=%2250%22 y=%22100%22 font-family=%22Arial%22 font-size=%2214%22 fill=%22%23999%22>微信支付二维码</text></svg>'"></van-image>
+          </div>
+          <div class="qrcode-tip">请使用{{ payMethod === 'alipay' ? '支付宝' : '微信' }}扫描二维码进行支付</div>
+        </div>
+      </div>
+      
+      <div class="pay-time">
+        订单将在 {{ countdownMinutes }}:{{ countdownSeconds < 10 ? '0' + countdownSeconds : countdownSeconds }} 后自动取消
+      </div>
+    </div>
+    
+    <!-- 底部操作栏 -->
+    <div class="action-bar">
+      <van-button type="default" class="action-button" @click="goBack">返回</van-button>
+      <van-button type="primary" class="action-button" @click="confirmPay">确认支付</van-button>
+    </div>
+  </div>
+  
+  <script>
+    // 使用Vue创建应用
+    const { createApp, ref, computed, onMounted,onUnmounted } = Vue;
+    
+    // 使用Vant组件
+    const { showToast, showDialog } = vant;
+    
+    const app = createApp({
+      setup() {
+        // 获取本地存储的订单数据
+        const totalPrice = ref(0);
+        const payMethod = ref('alipay'); // 默认选择支付宝
+        const countdownMinutes = ref(15);
+        const countdownSeconds = ref(0);
+        let countdownTimer = null;
+        
+        // 启动倒计时
+        const startCountdown = () => {
+          // 清除之前的定时器
+          if (countdownTimer) {
+            clearInterval(countdownTimer);
+          }
+          
+          // 每秒更新倒计时
+          countdownTimer = setInterval(() => {
+            if (countdownSeconds.value > 0) {
+              countdownSeconds.value--;
+            } else {
+              if (countdownMinutes.value > 0) {
+                countdownMinutes.value--;
+                countdownSeconds.value = 59;
+              } else {
+                // 倒计时结束，清除订单数据
+                clearInterval(countdownTimer);
+                localStorage.removeItem('orderData');
+                window.location.href = 'main.html';
+              }
+            }
+          }, 1000);
+        };
+        
+        onMounted(() => {
+          // 从本地存储获取订单数据
+          try {
+            const orderData = JSON.parse(localStorage.getItem('orderData'));
+            if (orderData) {
+              totalPrice.value = orderData.totalPrice || 0;
+              
+              // 计算倒计时
+              const orderTimeMs = new Date(orderData.orderTime).getTime();
+              const currentTimeMs = new Date().getTime();
+              const timeDiff = currentTimeMs - orderTimeMs;
+              
+              if (timeDiff < 15 * 60 * 1000) {
+                const remainingTime = 15 * 60 * 1000 - timeDiff;
+                countdownMinutes.value = Math.floor(remainingTime / (60 * 1000));
+                countdownSeconds.value = Math.floor((remainingTime % (60 * 1000)) / 1000);
+                
+                // 启动倒计时
+                startCountdown();
+              } else {
+                // 超过15分钟，清除订单数据
+                localStorage.removeItem('orderData');
+                window.location.href = 'main.html';
+              }
+            }
+          } catch (error) {
+            console.error('获取订单数据失败:', error);
+            showToast('获取订单数据失败');
+          }
+        });
+        
+        // 页面卸载时清除定时器
+        onUnmounted(() => {
+          if (countdownTimer) {
+            clearInterval(countdownTimer);
+          }
+        });
+        
+        // 返回上一页
+        const goBack = () => {
+          window.history.back();
+        };
+        
+        // 确认支付
+        const confirmPay = () => {
+          showDialog({
+            title: '支付确认',
+            message: '是否确认已完成支付？',
+            showCancelButton: true,
+          }).then((action) => {
+            if (action === 'confirm') {
+              showToast({
+                message: '支付成功！',
+                position: 'middle',
+                duration: 1500,
+                onClose: () => {
+                  // 支付成功后清除订单数据并返回主页
+                  localStorage.removeItem('orderData');
+                  window.location.href = 'main.html';
+                }
+              });
+            }
+          });
+        };
+        
+        return {
+          totalPrice,
+          payMethod,
+          countdownMinutes,
+          countdownSeconds,
+          goBack,
+          confirmPay
+        };
+      }
+    });
+    
+    // 注册Vant组件
+    app.use(vant);
+    
+    // 挂载应用
+    app.mount('#app');
+  </script>
+</body>
+</html>
